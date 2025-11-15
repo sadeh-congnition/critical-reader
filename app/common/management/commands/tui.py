@@ -1,4 +1,5 @@
 import djclick as click
+from asgiref.sync import async_to_sync
 from textual.message import Message
 from textual import events
 from dataclasses import dataclass
@@ -11,59 +12,7 @@ from textual.widgets import (
     Footer,
     Header,
 )
-
-
-@dataclass
-class ConversationStatus:
-    status: str
-    description: str = ""
-
-    def __str__(self):
-        if self.description:
-            return f"{self.status}, {self.description}"
-        return self.status
-
-
-@dataclass
-class ResourceStatus:
-    status: str
-
-    def __str__(self):
-        return self.status
-
-
-@dataclass
-class Resource:
-    name: str
-    status: ResourceStatus
-
-
-@dataclass
-class Conversation:
-    id: int | str
-    resources: list[Resource]
-    status: ConversationStatus
-
-    def __str__(self):
-        return f"{self.id}: {str(self.status)}"
-
-
-def get_conversations():
-    return [
-        Conversation(
-            "c1",
-            [
-                Resource("Article 1", ResourceStatus("Downloaded")),
-                Resource("Article 2", ResourceStatus("Fetching")),
-            ],
-            ConversationStatus("New", description="Add a resource"),
-        ),
-        Conversation(
-            "c2",
-            [Resource("Article 3", ResourceStatus("Downloaded"))],
-            ConversationStatus("New"),
-        ),
-    ]
+from common.models import get_conversations, Conversation
 
 
 class ConversationDetails(DataTable):
@@ -75,11 +24,11 @@ class ConversationDetails(DataTable):
     def on_mount(self):
         self.add_columns("ID", "Resources", "Status")
 
-    def make_rows(self, c):
+    def make_rows(self, c: Conversation):
         rows = []
         for i, r in enumerate(c.resources):
             if i == 0:
-                row = [c.id, f"{r.name}: {r.status}", c.status]
+                row = [c.id_for_ui, f"{r.name}: {r.status}", c.status]
             else:
                 row = ["", f"{r.name}: {r.status}", ""]
             rows.append(row)
@@ -100,14 +49,14 @@ class CriticalReaderTUIApp(App):
         yield Header()
         yield Footer()
 
-        self.conversations = get_conversations()
+    async def on_mount(self):
+        self.conversations = await get_conversations()
         for c in self.conversations:
-            yield ConversationDetails(id=c.id)
-            yield Rule()
+            self.mount(ConversationDetails(id=c.id_for_ui))
+            self.mount(Rule())
 
-    def on_mount(self):
         for c in self.conversations:
-            data_table = self.query_one(f"#{c.id}", ConversationDetails)
+            data_table = self.query_one(f"#{c.id_for_ui}", ConversationDetails)
             data_table.make_rows(c)
 
     def action_toggle_dark(self) -> None:
@@ -120,7 +69,8 @@ class CriticalReaderTUIApp(App):
         self.exit()
 
     def on_conversation_details_selected(self, message: ConversationDetails.Selected):
-        self.exit(message)
+        conv_id = message.conversation_id
+        # self.mount()
 
 
 @click.command()
@@ -128,4 +78,3 @@ def command():
     app = CriticalReaderTUIApp()
     event = app.run()
     print(event)
-    breakpoint()

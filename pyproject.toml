@@ -9,7 +9,9 @@ dependencies = [
     "django>=5.2.8",
     "django-async-job-pipelines",
     "django-click>=2.4.1",
+    "django-extensions>=4.1",
     "pandas>=2.3.3",
+    "ptpython>=3.0.31",
     "pypdf2>=3.0.1",
     "textual>=6.6.0",
     "textual-dev>=1.8.0",
@@ -18,6 +20,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "django-extensions>=4.1",
+  "isort>=7.0.0",
   "marimo>=0.17.7",
   "ptpython>=3.0.31",
   "python-dotenv>=1.2.1",
