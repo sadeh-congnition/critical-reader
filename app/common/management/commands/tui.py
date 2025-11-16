@@ -1,69 +1,20 @@
 import djclick as click
+from textual.reactive import reactive
 from textual.message import Message
 from textual import events
-from dataclasses import dataclass
 from textual.widgets import Footer, Header
 from textual.app import App, ComposeResult
 from textual.widgets import (
-    RichLog,
     DataTable,
     Rule,
     Footer,
     Header,
 )
-
-
-@dataclass
-class ConversationStatus:
-    status: str
-    description: str = ""
-
-    def __str__(self):
-        if self.description:
-            return f"{self.status}, {self.description}"
-        return self.status
-
-
-@dataclass
-class ResourceStatus:
-    status: str
-
-    def __str__(self):
-        return self.status
-
-
-@dataclass
-class Resource:
-    name: str
-    status: ResourceStatus
-
-
-@dataclass
-class Conversation:
-    id: int | str
-    resources: list[Resource]
-    status: ConversationStatus
-
-    def __str__(self):
-        return f"{self.id}: {str(self.status)}"
-
-
-def get_conversations():
-    return [
-        Conversation(
-            "c1",
-            [
-                Resource("Article 1", ResourceStatus("Downloaded")),
-                Resource("Article 2", ResourceStatus("Fetching")),
-            ],
-            ConversationStatus("New", description="Add a resource"),
-        ),
-        Conversation(
-            "c2",
-            [Resource("Article 3", ResourceStatus("Downloaded"))],
-            ConversationStatus("New"),
-        ),
-    ]
+from common.models import (
+    Conversation,
+    ConversationTable,
+    aget_conversations,
+)
 
 
 class ConversationDetails(DataTable):
@@ -75,14 +26,17 @@ class ConversationDetails(DataTable):
     def on_mount(self):
         self.add_columns("ID", "Resources", "Status")
 
-    def make_rows(self, c):
+    def make_rows(self, c: Conversation):
         rows = []
-        for i, r in enumerate(c.resources):
-            if i == 0:
-                row = [c.id, f"{r.name}: {r.status}", c.status]
-            else:
-                row = ["", f"{r.name}: {r.status}", ""]
-            rows.append(row)
+        if len(c.resources) == 0:
+            rows = [[c.id_for_ui, "Add resources!", c.status]]
+        else:
+            for i, r in enumerate(c.resources):
+                if i == 0:
+                    row = [c.id_for_ui, f"{r.name}: {r.status}", c.status]
+                else:
+                    row = ["", f"{r.name}: {r.status}", ""]
+                rows.append(row)
         for r in rows:
             self.add_row(*r)
 
@@ -94,20 +48,26 @@ class CriticalReaderTUIApp(App):
     """The TUI for Critical Reader"""
 
     CSS_PATH = "tui_styling.tcss"
-    BINDINGS = [("d", "toggle_dark", "Toggle dark mode"), ("q", "quit_app", "Quit")]
+    BINDINGS = [
+        ("d", "toggle_dark", "Toggle dark mode"),
+        ("q", "quit_app", "Quit"),
+        ("s", "create_conversation", "Start a new conversation"),
+    ]
+
+    conversation_added = reactive("0")
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield Footer()
 
-        self.conversations = get_conversations()
+    async def on_mount(self):
+        self.conversations = await aget_conversations()
         for c in self.conversations:
-            yield ConversationDetails(id=c.id)
-            yield Rule()
+            await self.mount(ConversationDetails(id=c.id_for_ui))
+            await self.mount(Rule())
 
-    def on_mount(self):
         for c in self.conversations:
-            data_table = self.query_one(f"#{c.id}", ConversationDetails)
+            data_table = self.query_one(f"#{c.id_for_ui}", ConversationDetails)
             data_table.make_rows(c)
 
     def action_toggle_dark(self) -> None:
@@ -119,8 +79,17 @@ class CriticalReaderTUIApp(App):
     def action_quit_app(self):
         self.exit()
 
+    async def action_create_conversation(self):
+        new_convo_db_row = await ConversationTable.acreate()
+        convo = await new_convo_db_row.conversation()
+        self.mount(ConversationDetails(id=convo.id_for_ui))
+        data_table = self.query_one(f"#{convo.id_for_ui}", ConversationDetails)
+        data_table.make_rows(convo)
+        self.mount(Rule())
+
     def on_conversation_details_selected(self, message: ConversationDetails.Selected):
-        self.exit(message)
+        conv_id = message.conversation_id
+        # self.mount()
 
 
 @click.command()
@@ -128,4 +97,3 @@ def command():
     app = CriticalReaderTUIApp()
     event = app.run()
     print(event)
-    breakpoint()
