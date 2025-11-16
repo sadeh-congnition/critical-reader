@@ -2,7 +2,6 @@ import djclick as click
 from textual.reactive import reactive
 from textual.message import Message
 from textual import events
-from textual.widgets import Footer, Header
 from textual.app import App, ComposeResult
 from textual.widgets import (
     DataTable,
@@ -10,11 +9,9 @@ from textual.widgets import (
     Footer,
     Header,
 )
-from common.models import (
-    Conversation,
-    ConversationTable,
-    aget_conversations,
-)
+from common.models import Conversation, ConversationRow, create_default_rows
+
+create_default_rows()
 
 
 class ConversationDetails(DataTable):
@@ -24,16 +21,16 @@ class ConversationDetails(DataTable):
             super().__init__()
 
     def on_mount(self):
-        self.add_columns("ID", "Resources", "Status")
+        self.add_columns("ID", "Resources", "Status", "Configuration")
 
     def make_rows(self, c: Conversation):
         rows = []
         if len(c.resources) == 0:
-            rows = [[c.id_for_ui, "Add resources!", c.status]]
+            rows = [[c.id_for_ui, "Add resources!", c.status, c.config]]
         else:
             for i, r in enumerate(c.resources):
                 if i == 0:
-                    row = [c.id_for_ui, f"{r.name}: {r.status}", c.status]
+                    row = [c.id_for_ui, f"{r.name}: {r.status}", c.status, c.config]
                 else:
                     row = ["", f"{r.name}: {r.status}", ""]
                 rows.append(row)
@@ -61,7 +58,7 @@ class CriticalReaderTUIApp(App):
         yield Footer()
 
     async def on_mount(self):
-        self.conversations = await aget_conversations()
+        self.conversations = await ConversationRow.aget_conversations()
         for c in self.conversations:
             await self.mount(ConversationDetails(id=c.id_for_ui))
             await self.mount(Rule())
@@ -80,7 +77,7 @@ class CriticalReaderTUIApp(App):
         self.exit()
 
     async def action_create_conversation(self):
-        new_convo_db_row = await ConversationTable.acreate()
+        new_convo_db_row = await ConversationRow.acreate()
         convo = await new_convo_db_row.conversation()
         self.mount(ConversationDetails(id=convo.id_for_ui))
         data_table = self.query_one(f"#{convo.id_for_ui}", ConversationDetails)
