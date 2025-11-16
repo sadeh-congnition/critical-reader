@@ -33,31 +33,6 @@ class ConversationConfig:
         return cls(downloader=Downloader(data["downloader"]))
 
 
-class ConversationTable(models.Model):
-    class Status(models.TextChoices):
-        NEW = "NEW"
-        PROCESSING_RESOURCES = "Processing resources"
-
-    resources = models.ManyToManyField(ResourceTable)
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_updated = models.DateTimeField(auto_now=True)
-    status = models.CharField(
-        max_length=1024, choices=Status.choices, default=Status.NEW
-    )
-    config = models.JSONField(default=dict)
-
-    @classmethod
-    def create(cls, configs: ConversationConfig):
-        cls.objects.create(config=configs.to_dict())
-
-    @classmethod
-    async def all(cls):
-        res = []
-        async for r in cls.objects.all():
-            res.append(r)
-        return res
-
-
 @dataclass
 class Resource:
     name: str
@@ -75,17 +50,59 @@ class Conversation:
         return f"{self.id_for_ui}: {str(self.status)}"
 
 
-async def get_conversations() -> list[Conversation]:
+class ConversationTable(models.Model):
+    class Status(models.TextChoices):
+        NEW = "NEW"
+        PROCESSING_RESOURCES = "Processing resources"
+
+    resources = models.ManyToManyField(ResourceTable)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+    status = models.CharField(
+        max_length=1024, choices=Status.choices, default=Status.NEW
+    )
+    config = models.JSONField(default=dict, blank=True, null=True)
+
+    @classmethod
+    async def acreate(cls):
+        res = await cls.objects.acreate()
+        return res
+
+    @classmethod
+    async def aall(cls):
+        res = []
+        async for r in cls.objects.all():
+            res.append(r)
+        return res
+
+    @classmethod
+    def all(cls):
+        return cls.objects.all()
+
+    async def conversation(self) -> Conversation:
+        resources = []
+        async for r in self.resources.all():
+            resources.append(Resource(name=r.name, status=r.status))
+        return Conversation(
+            id_in_db=self.id,
+            id_for_ui=f"converstaion-{self.id}",
+            resources=resources,
+            status=self.status,
+        )
+
+
+def get_conversations() -> list[Conversation]:
     res = []
-    conversation_rows = await ConversationTable.all()
+    conversation_rows = ConversationTable.all()
     for c in conversation_rows:
-        for r in c.resources.all():
-            res.append(
-                Conversation(
-                    id_in_db=c.id,
-                    id_for_ui=f"converstaion-{c.id}",
-                    resources=[Resource(name=r.name, status=r.status)],
-                    status=c.status,
-                )
-            )
+        res.append(c.conversation())
+    return res
+
+
+async def aget_conversations() -> list[Conversation]:
+    res = []
+    conversation_rows = await ConversationTable.aall()
+    for c in conversation_rows:
+        convo = await c.conversation()
+        res.append(convo)
     return res
