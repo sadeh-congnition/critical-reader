@@ -45,7 +45,7 @@ class EmbedderTableAdmin(admin.ModelAdmin):
 
 @admin.register(ResourceRow)
 class ResourceTableAdmin(admin.ModelAdmin):
-    list_display = ("name", "status", "url", "date_created", "date_updated")
+    list_display = ("status", "url", "date_created", "date_updated")
 
 
 @admin.register(ConversationRow)

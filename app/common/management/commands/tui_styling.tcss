@@ -1,51 +1,29 @@
-Stopwatch {   
-    background: $boost;
-    height: 5;
-    margin: 1;
-    min-width: 50;
-    padding: 1;
-}
-
-TimeDisplay {   
-    text-align: center;
-    color: $foreground-muted;
-    height: 3;
-}
-
 Button {
     width: 16;
 }
 
-#start {
-    dock: left;
+CreateResourceView{
+    align: center middle;
 }
 
-#stop {
-    dock: left;
-    display: none;
+#new-resource {
+    grid-size: 1 2;
+    grid-gutter: 1 2;
+    grid-rows: 1fr 3;
+    padding: 0 1;
+    width: 60;
+    height: 11;
+    border: thick $background 80%;
+    background: $surface;
 }
 
-#reset {
-    dock: right;
+#enter-url {
+    column-span: 2;
+    height: 1fr;
+    width: 1fr;
+    content-align: center middle;
 }
 
-.started {
-    background: $success-muted;
-    color: $text;
-}
-
-.started TimeDisplay {
-    color: $foreground;
-}
-
-.started #start {
-    display: none
-}
-
-.started #stop {
-    display: block
-}
-
-.started #reset {
-    visibility: hidden
+#url-input {
+  width: 1fr;
 }
