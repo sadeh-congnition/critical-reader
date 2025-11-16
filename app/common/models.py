@@ -1,11 +1,10 @@
-from enum import Enum
-from asgiref.sync import sync_to_async, async_to_sync
+from typing import Self
 from dataclasses import dataclass
 
 from django.db import models
 
 
-class ResourceTable(models.Model):
+class ResourceRow(models.Model):
     class Status(models.TextChoices):
         NEW = "New"
         DOWNLOAD_IN_PROGRESS = "Download in progress"
@@ -15,22 +14,9 @@ class ResourceTable(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT)
-
-
-class Downloader(str, Enum):
-    WEB_SCRAPER = "Web page scraper"
-
-
-@dataclass
-class ConversationConfig:
-    downloader: Downloader
-
-    def to_dict(self):
-        return {"downloader": self.downloader.value}
-
-    @classmethod
-    def from_dict(cls, data: dict):
-        return cls(downloader=Downloader(data["downloader"]))
+    status = models.CharField(
+        max_length=1024, choices=Status.choices, default=Status.NEW
+    )
 
 
 @dataclass
@@ -45,23 +31,26 @@ class Conversation:
     id_for_ui: str
     resources: list[Resource]
     status: str
+    config: dict
 
     def __str__(self):
         return f"{self.id_for_ui}: {str(self.status)}"
 
 
-class ConversationTable(models.Model):
+class ConversationRow(models.Model):
     class Status(models.TextChoices):
         NEW = "NEW"
         PROCESSING_RESOURCES = "Processing resources"
 
-    resources = models.ManyToManyField(ResourceTable)
+    resources = models.ManyToManyField(ResourceRow)
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     status = models.CharField(
         max_length=1024, choices=Status.choices, default=Status.NEW
     )
-    config = models.JSONField(default=dict, blank=True, null=True)
+
+    def __str__(self):
+        return f"conversation-{self.id}: {str(self.status)}"
 
     @classmethod
     async def acreate(cls):
@@ -83,26 +72,200 @@ class ConversationTable(models.Model):
         resources = []
         async for r in self.resources.all():
             resources.append(Resource(name=r.name, status=r.status))
+
+        config_row = await ConversationConfigRow.aget_by_conversation(self.id)
+        if config_row:
+            config = config_row.to_dict()
+        else:
+            config = {}
         return Conversation(
             id_in_db=self.id,
             id_for_ui=f"converstaion-{self.id}",
             resources=resources,
             status=self.status,
+            config=config,
+        )
+
+    @classmethod
+    def get_conversations(cls) -> list[Conversation]:
+        res = []
+        conversation_rows = ConversationRow.all()
+        for c in conversation_rows:
+            res.append(c.conversation())
+        return res
+
+    @classmethod
+    async def aget_conversations(cls) -> list[Conversation]:
+        res = []
+        conversation_rows = await ConversationRow.aall()
+        for c in conversation_rows:
+            convo = await c.conversation()
+            res.append(convo)
+        return res
+
+
+class DownloaderRow(models.Model):
+    class Downloader(models.TextChoices):
+        WEB_SCRAPER = "Web page scraper"
+
+    downloader = models.CharField(
+        max_length=1024, choices=Downloader.choices, unique=True
+    )
+
+    def __str__(self):
+        return self.downloader
+
+    def to_dict(self) -> dict:
+        return {"name": self.downloader}
+
+    @classmethod
+    def create_default_rows(cls):
+        cls.objects.get_or_create(downloader=cls.Downloader.WEB_SCRAPER)
+
+
+class TextExtractorRow(models.Model):
+    class Provider(models.TextChoices):
+        JINA_API = "jina"
+        LOCAL = "ollama"
+
+    class ModelName(models.TextChoices):
+        READER_LM_V2 = "ReaderLM-v2"
+
+    provider = models.CharField(max_length=1024, choices=Provider.choices)
+    model_name = models.CharField(max_length=1024, choices=ModelName.choices)
+
+    class Meta:
+        unique_together = [("provider", "model_name")]
+
+    def __str__(self):
+        return self.model_name
+
+    def to_dict(self) -> dict:
+        return {"provider": self.provider, "model_name": self.model_name}
+
+    @classmethod
+    def create_default_rows(cls):
+        cls.objects.get_or_create(
+            provider=cls.Provider.JINA_API, model_name=cls.ModelName.READER_LM_V2
         )
 
 
-def get_conversations() -> list[Conversation]:
-    res = []
-    conversation_rows = ConversationTable.all()
-    for c in conversation_rows:
-        res.append(c.conversation())
-    return res
+class EmbedderRow(models.Model):
+    class Provider(models.TextChoices):
+        LOCAL = "ollama"
+        JINA_API = "jina"
+
+    class ModelName(models.TextChoices):
+        JINA_EMBEDDINGS_V4 = "jina-embeddings-v4"
+
+    provider = models.CharField(max_length=1024, choices=Provider.choices)
+    model_name = models.CharField(max_length=1024, choices=ModelName.choices)
+
+    class Meta:
+        unique_together = [("provider", "model_name")]
+
+    def __str__(self):
+        return f"{self.provider}-{self.model_name}"
+
+    def to_dict(self) -> dict:
+        return {"provider": self.provider, "model_name": self.model_name}
+
+    @classmethod
+    def create_default_rows(cls):
+        cls.objects.get_or_create(
+            provider=cls.Provider.JINA_API, model_name=cls.ModelName.JINA_EMBEDDINGS_V4
+        )
 
 
-async def aget_conversations() -> list[Conversation]:
-    res = []
-    conversation_rows = await ConversationTable.aall()
-    for c in conversation_rows:
-        convo = await c.conversation()
-        res.append(convo)
-    return res
+class ChunkerRow(models.Model):
+    class Type(models.TextChoices):
+        FIXED = "Fixed size"
+        NO_CHUNK = "No chunking"
+
+    type = models.CharField(max_length=1024, choices=Type.choices)
+    size = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        unique_together = [("type", "size")]
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "size": self.size}
+
+    def __str__(self):
+        return f"{self.type}, {self.size}"
+
+    @classmethod
+    def create_default_rows(cls):
+        cls.objects.get_or_create(type=cls.Type.FIXED, size=1024)
+        cls.objects.get_or_create(type=cls.Type.NO_CHUNK)
+
+    @classmethod
+    def default(cls) -> Self:
+        return cls.objects.get(type=cls.Type.FIXED, size=1024)
+
+    @classmethod
+    def no_chunk(cls) -> Self:
+        return cls.objects.get(type=cls.Type.NO_CHUNK)
+
+
+class ProcessorRow(models.Model):
+    class Type(models.TextChoices):
+        SIMPLE_RAG = "Simple RAG"
+
+    type = models.CharField(max_length=1024, choices=Type.choices)
+    chunker = models.ForeignKey(ChunkerRow, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = [("type", "chunker")]
+
+    @classmethod
+    def create_default_rows(cls):
+        cls.objects.get_or_create(
+            type=cls.Type.SIMPLE_RAG,
+            chunker=ChunkerRow.default(),
+        )
+        cls.objects.get_or_create(
+            type=cls.Type.SIMPLE_RAG,
+            chunker=ChunkerRow.no_chunk(),
+        )
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "chunker": self.chunker.to_dict()}
+
+    def __str__(self):
+        return f"{self.type}, {self.chunker}"
+
+
+class ConversationConfigRow(models.Model):
+    conversation = models.OneToOneField(ConversationRow, on_delete=models.CASCADE)
+    downloader = models.ForeignKey(DownloaderRow, on_delete=models.CASCADE)
+    text_extractor = models.ForeignKey(TextExtractorRow, on_delete=models.CASCADE)
+    embedder = models.ForeignKey(EmbedderRow, on_delete=models.CASCADE)
+    processor = models.ForeignKey(ProcessorRow, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"{self.downloader}, {self.text_extractor}, {self.embedder}"
+
+    def to_dict(self) -> dict:
+        return {
+            "downloader": self.downloader.to_dict(),
+            "text_extractor": self.text_extractor.to_dict(),
+            "embedder": self.embedder.to_dict(),
+            "processor": self.processor.to_dict(),
+        }
+
+    @classmethod
+    async def aget_by_conversation(cls, conversation_id: int | str) -> Self | None:
+        try:
+            res = await cls.objects.aget(conversation_id=conversation_id)
+            return res
+        except cls.DoesNotExist:
+            return
+
+
+def create_default_rows():
+    DownloaderRow.create_default_rows()
+    TextExtractorRow.create_default_rows()
+    EmbedderRow.create_default_rows()
+    ChunkerRow.create_default_rows()
+    ProcessorRow.create_default_rows()
