@@ -30,7 +30,10 @@ class DownloaderTableAdmin(admin.ModelAdmin):
 
 @admin.register(TextExtractorRow)
 class JinaAIExtractorTableAdmin(admin.ModelAdmin):
-    list_display = ("model_name",)
+    list_display = (
+        "provider",
+        "model_name",
+    )
 
 
 @admin.register(ConversationConfigRow)
