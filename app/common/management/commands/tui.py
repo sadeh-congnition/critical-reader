@@ -3,14 +3,13 @@ from loguru import logger
 from django.utils import timezone
 
 import djclick as click
-from textual._node_list import DuplicateIds
+from textual.widgets import RichLog
 from textual.reactive import reactive
 from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Grid
 from textual.css.query import NoMatches
 from textual.message import Message
-from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
@@ -31,36 +30,11 @@ from common.models import (
     ConversationRow,
     ResourceRow,
     create_default_rows,
+    EventLogRows,
+    EventLog,
 )
 
 create_default_rows()
-
-
-class ConversationDetails(DataTable):
-    class Selected(Message):
-        def __init__(self, id: str):
-            self.conversation_id = id
-            super().__init__()
-
-    def on_mount(self):
-        self.add_columns("ID", "Resources", "Status", "Configuration")
-
-    def make_rows(self, c: Conversation):
-        rows = []
-        if len(c.resources) == 0:
-            rows = [[c.id_for_ui, "Add resources!", c.status, c.config]]
-        else:
-            for i, r in enumerate(c.resources):
-                if i == 0:
-                    row = [c.id_for_ui, f"{r.url} -> {r.status}", c.status, c.config]
-                else:
-                    row = ["", f"{r.url} -> {r.status}", ""]
-                rows.append(row)
-        for r in rows:
-            self.add_row(*r)
-
-    def key_enter(self, event: events.Key) -> None:
-        self.post_message(self.Selected(self.id))
 
 
 class ConversationConfigMissing(ModalScreen):
@@ -122,7 +96,7 @@ class CreateResourceView(ModalScreen):
 
 class ResroucesList(DataTable):
     def on_mount(self):
-        self.add_columns("Name", "Status", "Error")
+        self.add_columns("ID", "Name", "Status", "Error")
 
     async def make_rows(self, conversation_id_for_ui):
         resources = await ResourceRow.aget_all_by_conversation_id_for_ui(
@@ -134,7 +108,7 @@ class ResroucesList(DataTable):
             else:
                 url = r.url
             error_msg = r.error_msg.replace("\n", " ") if r.error_msg else ""
-            self.add_row(url, r.status, error_msg)
+            self.add_row(r.id, url, r.status, error_msg)
 
 
 class ConversationView(ModalScreen):
@@ -155,6 +129,7 @@ class ConversationView(ModalScreen):
         yield Footer()
         yield Label("[bold][yellow]Resources[/]")
         yield ResroucesList(id="resources-list")
+        yield RichLog(id="event-log", markup=True)
 
     async def on_mount(self):
         self.set_interval(3, self.update_time)
@@ -171,10 +146,12 @@ class ConversationView(ModalScreen):
 
     async def watch_time(self):
         await self.arecreate_resources_table()
+        await self.acreate_event_log()
 
     async def action_add_resource(self):
         global ACTIVE_CONVERSATION_ID
         assert ACTIVE_CONVERSATION_ID
+
         conversation_config_row = (
             await ConversationConfigRow.aget_by_conversation_id_for_ui(
                 ACTIVE_CONVERSATION_ID
@@ -184,6 +161,21 @@ class ConversationView(ModalScreen):
             self.app.push_screen(ConversationConfigMissing())
         else:
             self.app.push_screen(CreateResourceView())
+
+    async def acreate_event_log(self):
+        global ACTIVE_CONVERSATION_ID
+        assert ACTIVE_CONVERSATION_ID
+
+        events: list[EventLog] = await EventLogRows.aget_logs_for_conversation(
+            ACTIVE_CONVERSATION_ID
+        )
+        event_log = self.query_one(RichLog)
+        event_log.clear()
+
+        event_log.write("[bold][yellow]Conversation events log:[/]")
+
+        for e in events:
+            event_log.write(e.human_readable())
 
     async def on_screen_suspend(self):
         self.clear_resources_list()
@@ -207,6 +199,33 @@ class ConversationView(ModalScreen):
 
         global ACTIVE_CONVERSATION_ID
         await data_table.make_rows(ACTIVE_CONVERSATION_ID)
+
+
+class ConversationDetails(DataTable):
+    class Selected(Message):
+        def __init__(self, id: str):
+            self.conversation_id = id
+            super().__init__()
+
+    def on_mount(self):
+        self.add_columns("ID", "Resources", "Status", "Configuration")
+
+    def make_rows(self, c: Conversation):
+        rows = []
+        if len(c.resources) == 0:
+            rows = [[c.id_for_ui, "Add resources!", c.status, c.config]]
+        else:
+            for i, r in enumerate(c.resources):
+                if i == 0:
+                    row = [c.id_for_ui, f"{r.url} -> {r.status}", c.status, c.config]
+                else:
+                    row = ["", f"{r.url} -> {r.status}", ""]
+                rows.append(row)
+        for r in rows:
+            self.add_row(*r)
+
+    def key_enter(self, event: events.Key) -> None:
+        self.post_message(self.Selected(self.id))
 
 
 class CriticalReaderTUIApp(App):
