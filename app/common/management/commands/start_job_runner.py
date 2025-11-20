@@ -4,7 +4,7 @@ from django.core.management import call_command
 from common.jobs.extract_text.using_apis.jina_ai_api import (
     scrape_web_page_using_requests,
 )
-from common.jobs.rags.simple import dummy_job
+from common.jobs.rags.simple import dummy_rag
 
 
 class Command(BaseCommand):

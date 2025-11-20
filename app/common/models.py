@@ -186,8 +186,11 @@ class ResourceRow(models.Model):
         return res
 
     @classmethod
-    def get_by_id(cls, id: int | str):
-        return cls.objects.get(id=id)
+    def get_by_id(cls, id: int | str) -> Self | None:
+        try:
+            return cls.objects.get(id=id)
+        except cls.DoesNotExist:
+            return
 
     def add_scraped_content(self, content: str):
         self.scraped_content = content
@@ -590,7 +593,7 @@ class EventLog:
     entity_id: str
 
     def human_readable(self) -> str:
-        return f"{self.event_type}: {self.entity_id}"
+        return f"|{self.date_created}| {self.event_type}: {self.entity_id}"
 
 
 class EventLogRows(models.Model):

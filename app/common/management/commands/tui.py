@@ -1,5 +1,4 @@
 import traceback
-from loguru import logger
 from django.utils import timezone
 
 import djclick as click
@@ -86,7 +85,10 @@ class CreateResourceView(ModalScreen):
         conversation_config = await conversation_config_row.ato_obj()
         try:
             await create_resource_processing_pipeline(
-                Event.RESOURCE_CREATED, conversation_config, resource.id
+                Event.RESOURCE_CREATED,
+                conversation_config,
+                ACTIVE_CONVERSATION_ID,
+                resource.id,
             )
         except Exception:
             await resource.aadd_error(traceback.format_exc())
@@ -213,7 +215,7 @@ class ConversationDetails(DataTable):
     def make_rows(self, c: Conversation):
         rows = []
         if len(c.resources) == 0:
-            rows = [[c.id_for_ui, "Add resources!", c.status, c.config]]
+            rows = [[c.id_for_ui, "[bod][red]Add resources![/]", c.status, c.config]]
         else:
             for i, r in enumerate(c.resources):
                 if i == 0:
