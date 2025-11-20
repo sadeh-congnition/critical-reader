@@ -15,6 +15,10 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+from dotenv import load_dotenv
+
+assert load_dotenv(BASE_DIR / ".env")
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -39,6 +43,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "common",
     "django_extensions",
+    "django_async_job_pipelines",
 ]
 
 MIDDLEWARE = [
@@ -122,3 +127,11 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+DJJP = {
+    "concurrency": "threads",  # ['threads', 'asyncio'] are valid values, `asyncio` not implemented yet
+    "concurrency_limit": 1,  # how many jobs to run concurrently per process
+    "db_name": "default",  # name of database to use as job queue
+    "scheduler_interval": 10,  # the interval in seconds for scheduler to run
+    "stuck_jobs_requeue_interval": 60,  # the interval in seconds for resetting stuck jobs
+}

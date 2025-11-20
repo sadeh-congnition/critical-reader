@@ -1,7 +1,17 @@
-from typing import Self
 from dataclasses import dataclass
+from typing import Self
 
 from django.db import models
+
+from common.constants import (
+    JINA_AI_MODELS,
+    ChunkerType,
+    ConversationStatus,
+    DownloaderType,
+    ProcessorType,
+    Provider,
+    ResourceStatus,
+)
 
 
 @dataclass
@@ -24,14 +34,21 @@ class Conversation:
 
 class ConversationRow(models.Model):
     class Status(models.TextChoices):
-        NEW = "NEW"
-        PROCESSING_RESOURCES = "Processing resources"
+        NEW = ConversationStatus.NEW, ConversationStatus.NEW
+        PROCESSING_RESOURCES = (
+            ConversationStatus.PROCESSING_RESOURCES,
+            ConversationStatus.PROCESSING_RESOURCES,
+        )
 
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     status = models.CharField(
         max_length=1024, choices=Status.choices, default=Status.NEW
     )
+
+    @property
+    def id_for_ui(self):
+        return f"conversation-{self.id}"
 
     def __str__(self):
         return f"conversation-{self.id}: {str(self.status)}"
@@ -54,7 +71,7 @@ class ConversationRow(models.Model):
 
     async def conversation(self) -> Conversation:
         resources = []
-        async for r in self.resources.all():
+        async for r in self.resources.order_by("-date_updated").all():
             resources.append(Resource(url=r.url, status=r.status))
 
         config_row = await ConversationConfigRow.aget_by_conversation(self.id)
@@ -64,7 +81,7 @@ class ConversationRow(models.Model):
             config = {}
         return Conversation(
             id_in_db=self.id,
-            id_for_ui=f"conversation-{self.id}",
+            id_for_ui=self.id_for_ui,
             resources=resources,
             status=self.status,
             config=config,
@@ -90,8 +107,11 @@ class ConversationRow(models.Model):
 
 class ResourceRow(models.Model):
     class Status(models.TextChoices):
-        NEW = "New"
-        DOWNLOAD_IN_PROGRESS = "Download in progress"
+        NEW = ResourceStatus.NEW, ResourceStatus.NEW
+        DOWNLOADED = ResourceStatus.DOWNLOADED, ResourceStatus.DOWNLOADED
+        SCRAPED = ResourceStatus.SCRAPED, ResourceStatus.SCRAPED
+        ERROR = ResourceStatus.ERROR, ResourceStatus.ERROR
+        PROCESSED = ResourceStatus.PROCESSED, ResourceStatus.PROCESSED
 
     conversation = models.ForeignKey(
         ConversationRow, on_delete=models.CASCADE, related_name="resources"
@@ -103,31 +123,81 @@ class ResourceRow(models.Model):
     status = models.CharField(
         max_length=1024, choices=Status.choices, default=Status.NEW
     )
+    scraped_content = models.TextField(null=True, blank=True)
+    error_msg = models.TextField(null=True, blank=True)
+
+    def set_download_finishied(self):
+        self.status = self.Status.DOWNLOADED
+        self.save()
+
+    def set_scraping_finished(self):
+        self.status = self.Status.SCRAPED
+        self.save()
+
+    def set_processed(self):
+        self.status = self.Status.PROCESSED
+        self.save()
+
+    def add_error(self, error_msg: str):
+        self.status = self.Status.ERROR
+        self.error_msg = error_msg
+        self.save()
+
+    async def aadd_error(self, error_msg: str):
+        self.status = self.Status.ERROR
+        self.error_msg = error_msg
+        await self.asave()
 
     @classmethod
     async def aget_all_by_conversation_id_for_ui(cls, conversation_id_for_ui: str):
         res = []
         async for r in cls.objects.filter(
             conversation_id=int(conversation_id_for_ui.split("conversation-")[-1])
-        ):
+        ).order_by("-date_updated"):
             res.append(r)
         return res
 
     @classmethod
     async def acreate(cls, conversation_id_for_ui: str, url: str):
-        await cls.objects.acreate(
+        res = await cls.objects.acreate(
             conversation_id=int(conversation_id_for_ui.split("conversation-")[-1]),
             url=url,
         )
+        return res
+
+    @classmethod
+    def get_by_id(cls, id: int | str):
+        return cls.objects.get(id=id)
+
+    def add_scraped_content(self, content: str):
+        self.scraped_content = content
+        self.save()
+
+
+@dataclass
+class Downloader:
+    type: str
+
+    def validate(self):
+        assert self.type in [DownloaderType.JINA_AI_READER_USING_JINA_API]
 
 
 class DownloaderRow(models.Model):
     class Downloader(models.TextChoices):
-        WEB_SCRAPER = "Web page scraper"
+        WEB_SCRAPER = DownloaderType.WEB_PAGE_SCRAPER, DownloaderType.WEB_PAGE_SCRAPER
+        JINA_AI_API = (
+            DownloaderType.JINA_AI_READER_USING_JINA_API,
+            DownloaderType.JINA_AI_READER_USING_JINA_API,
+        )
 
     downloader = models.CharField(
         max_length=1024, choices=Downloader.choices, unique=True
     )
+
+    @classmethod
+    def get_by_id(cls, id) -> Self:
+        res = cls.objects.get(id=id)
+        return res
 
     @classmethod
     async def aget_by_id(cls, id) -> Self:
@@ -143,18 +213,39 @@ class DownloaderRow(models.Model):
     @classmethod
     def create_default_rows(cls):
         cls.objects.get_or_create(downloader=cls.Downloader.WEB_SCRAPER)
+        cls.objects.get_or_create(downloader=cls.Downloader.JINA_AI_API)
+
+    def to_obj(self) -> Downloader:
+        return Downloader(type=self.downloader)
+
+
+@dataclass
+class TextExtractor:
+    provider: str
+    model_name: str
+    downloader: Downloader
+
+    def validate(self):
+        if self.downloader.type == DownloaderType.JINA_AI_READER_USING_JINA_API:
+            assert self.provider == TextExtractorRow.Provider.JINA_API
+            assert self.model_name in JINA_AI_MODELS.reader_models()
 
 
 class TextExtractorRow(models.Model):
     class Provider(models.TextChoices):
-        JINA_API = "jina"
-        LOCAL = "ollama"
+        JINA_API = Provider.JINA, Provider.JINA
+        LOCAL = Provider.OLLAMA, Provider.OLLAMA
 
     class ModelName(models.TextChoices):
-        READER_LM_V2 = "ReaderLM-v2"
+        READER_LM_V2 = JINA_AI_MODELS.READER_LM_V2, JINA_AI_MODELS.READER_LM_V2
 
     provider = models.CharField(max_length=1024, choices=Provider.choices)
     model_name = models.CharField(max_length=1024, choices=ModelName.choices)
+
+    @classmethod
+    def get(cls, id) -> Self:
+        res = cls.objects.get(id=id)
+        return res
 
     @classmethod
     async def aget(cls, id) -> Self:
@@ -170,6 +261,11 @@ class TextExtractorRow(models.Model):
     def to_dict(self) -> dict:
         return {"provider": self.provider, "model_name": self.model_name}
 
+    def to_obj(self, downloader: Downloader) -> TextExtractor:
+        return TextExtractor(
+            provider=self.provider, model_name=self.model_name, downloader=downloader
+        )
+
     @classmethod
     def create_default_rows(cls):
         cls.objects.get_or_create(
@@ -177,16 +273,33 @@ class TextExtractorRow(models.Model):
         )
 
 
+@dataclass
+class Embedder:
+    provider: str
+    model_name: str
+
+    def validate(self):
+        pass
+
+
 class EmbedderRow(models.Model):
     class Provider(models.TextChoices):
-        LOCAL = "ollama"
-        JINA_API = "jina"
+        LOCAL = Provider.OLLAMA, Provider.OLLAMA
+        JINA_API = Provider.JINA, Provider.JINA
 
     class ModelName(models.TextChoices):
-        JINA_EMBEDDINGS_V4 = "jina-embeddings-v4"
+        JINA_EMBEDDINGS_V4 = (
+            JINA_AI_MODELS.JINA_EMBEDDINGS_V4,
+            JINA_AI_MODELS.JINA_EMBEDDINGS_V4,
+        )
 
     provider = models.CharField(max_length=1024, choices=Provider.choices)
     model_name = models.CharField(max_length=1024, choices=ModelName.choices)
+
+    @classmethod
+    def get(cls, id) -> Self:
+        res = cls.objects.get(id=id)
+        return res
 
     @classmethod
     async def aget(cls, id) -> Self:
@@ -208,11 +321,20 @@ class EmbedderRow(models.Model):
             provider=cls.Provider.JINA_API, model_name=cls.ModelName.JINA_EMBEDDINGS_V4
         )
 
+    def to_obj(self) -> Embedder:
+        return Embedder(provider=self.provider, model_name=self.model_name)
+
+
+@dataclass
+class Chunker:
+    type: str
+    size: int | None
+
 
 class ChunkerRow(models.Model):
     class Type(models.TextChoices):
-        FIXED = "Fixed size"
-        NO_CHUNK = "No chunking"
+        FIXED = ChunkerType.FIXED, ChunkerType.FIXED
+        NO_CHUNK = ChunkerType.NO_CHUNK, ChunkerType.NO_CHUNK
 
     type = models.CharField(max_length=1024, choices=Type.choices)
     size = models.IntegerField(null=True, blank=True)
@@ -223,6 +345,11 @@ class ChunkerRow(models.Model):
     @classmethod
     async def aget_by_id(cls, id) -> Self:
         res = await cls.objects.aget(id=id)
+        return res
+
+    @classmethod
+    def get_by_id(cls, id) -> Self:
+        res = cls.objects.get(id=id)
         return res
 
     def to_dict(self) -> dict:
@@ -244,16 +371,33 @@ class ChunkerRow(models.Model):
     def no_chunk(cls) -> Self:
         return cls.objects.get(type=cls.Type.NO_CHUNK)
 
+    def to_obj(self) -> Chunker:
+        return Chunker(type=self.type, size=self.size)
+
+
+@dataclass
+class Processor:
+    type: str
+    chunker: Chunker
+
+    def validate(self):
+        pass
+
 
 class ProcessorRow(models.Model):
     class Type(models.TextChoices):
-        SIMPLE_RAG = "Simple RAG"
+        SIMPLE_RAG = ProcessorType.SIMPLE_RAG, ProcessorType.SIMPLE_RAG
 
     type = models.CharField(max_length=1024, choices=Type.choices)
     chunker = models.ForeignKey(ChunkerRow, on_delete=models.CASCADE)
 
     class Meta:
         unique_together = [("type", "chunker")]
+
+    @classmethod
+    def get(cls, id) -> Self:
+        res = cls.objects.get(id=id)
+        return res
 
     @classmethod
     async def aget(cls, id) -> Self:
@@ -280,6 +424,29 @@ class ProcessorRow(models.Model):
 
     def __str__(self):
         return f"{self.type}, {self.chunker}"
+
+    async def ato_obj(self) -> Processor:
+        chunker = await ChunkerRow.aget_by_id(self.chunker_id)
+        return Processor(type=self.type, chunker=chunker.to_obj())
+
+    def to_obj(self) -> Processor:
+        chunker = ChunkerRow.get_by_id(self.chunker_id)
+        return Processor(type=self.type, chunker=chunker.to_obj())
+
+
+@dataclass
+class Config:
+    conversation_id: int | str
+    downloader: Downloader
+    text_extractor: TextExtractor
+    embedder: Embedder
+    processor: Processor
+
+    def validate(self):
+        self.downloader.validate()
+        self.text_extractor.validate()
+        self.embedder.validate()
+        self.processor.validate()
 
 
 class ConversationConfigRow(models.Model):
@@ -313,12 +480,74 @@ class ConversationConfigRow(models.Model):
         }
 
     @classmethod
-    async def aget_by_conversation(cls, conversation_id: int | str) -> Self | None:
+    async def aget_by_conversation(cls, conversation_id: str) -> Self | None:
         try:
             res = await cls.objects.aget(conversation_id=conversation_id)
             return res
         except cls.DoesNotExist:
             return
+
+    @classmethod
+    def get_by_conversation_id_for_ui(cls, conversation_id_for_ui: str) -> Self | None:
+        try:
+            res = cls.objects.get(
+                conversation_id=int(conversation_id_for_ui.split("conversation-")[-1])
+            )
+            return res
+        except cls.DoesNotExist:
+            return
+
+    @classmethod
+    async def aget_by_conversation_id_for_ui(
+        cls, conversation_id_for_ui: str
+    ) -> Self | None:
+        try:
+            res = await cls.objects.aget(
+                conversation_id=int(conversation_id_for_ui.split("conversation-")[-1])
+            )
+            return res
+        except cls.DoesNotExist:
+            return
+
+    async def ato_obj(self) -> Config:
+        downloader = await DownloaderRow.aget_by_id(self.downloader_id)
+        text_extractor = await TextExtractorRow.aget(self.text_extractor_id)
+        embedder = await EmbedderRow.aget(self.embedder_id)
+        processor = await ProcessorRow.aget(self.processor_id)
+
+        processor_obj = await processor.ato_obj()
+        downloader_obj = downloader.to_obj()
+
+        conf = Config(
+            conversation_id=self.id,
+            downloader=downloader_obj,
+            text_extractor=text_extractor.to_obj(downloader_obj),
+            embedder=embedder.to_obj(),
+            processor=processor_obj,
+        )
+
+        conf.validate()
+        return conf
+
+    def to_obj(self) -> Config:
+        downloader = DownloaderRow.get_by_id(self.downloader_id)
+        text_extractor = TextExtractorRow.get(self.text_extractor_id)
+        embedder = EmbedderRow.get(self.embedder_id)
+        processor = ProcessorRow.get(self.processor_id)
+
+        processor_obj = processor.to_obj()
+        downloader_obj = downloader.to_obj()
+
+        conf = Config(
+            conversation_id=self.id,
+            downloader=downloader_obj,
+            text_extractor=text_extractor.to_obj(downloader_obj),
+            embedder=embedder.to_obj(),
+            processor=processor_obj,
+        )
+
+        conf.validate()
+        return conf
 
 
 def create_default_rows():
