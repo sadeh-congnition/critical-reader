@@ -37,3 +37,12 @@ class ChunkerType:
 
 class ProcessorType:
     SIMPLE_RAG = "Simple RAG"
+
+
+class EventTypes:
+    RESOURCE_ADDED = "Resource added"
+    CONVERSATION_CREATED = "Conversation created"
+    RESOURCE_PROCESSING_STARTED = "Resource processing started"
+    RESOURCE_PROCESSING_ENCOUNTERED_ERROR = "Resource processing encountered error"
+    RESOURCE_DOWNLOADED_AND_TEXT_EXTRACTED = "Resource downloaded and text extracted"
+    RESOURCE_PROCESSED = "Resource processed"

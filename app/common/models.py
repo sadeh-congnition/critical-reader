@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Self
 
 from django.db import models
@@ -11,6 +12,7 @@ from common.constants import (
     ProcessorType,
     Provider,
     ResourceStatus,
+    EventTypes,
 )
 
 
@@ -46,9 +48,21 @@ class ConversationRow(models.Model):
         max_length=1024, choices=Status.choices, default=Status.NEW
     )
 
+    @classmethod
+    async def aget_by_id(cls, row_id) -> Self | None:
+        try:
+            res = await cls.objects.aget(id=row_id)
+            return res
+        except cls.DoesNotExist:
+            return
+
     @property
     def id_for_ui(self):
         return f"conversation-{self.id}"
+
+    @classmethod
+    def db_id_from_ui_id(cls, ui_id) -> int:
+        return int(ui_id.split("conversation-")[-1])
 
     def __str__(self):
         return f"conversation-{self.id}: {str(self.status)}"
@@ -56,6 +70,7 @@ class ConversationRow(models.Model):
     @classmethod
     async def acreate(cls):
         res = await cls.objects.acreate()
+        await EventLogRows.acreate(res.id, EventTypes.CONVERSATION_CREATED, res.id)
         return res
 
     @classmethod
@@ -152,7 +167,7 @@ class ResourceRow(models.Model):
     async def aget_all_by_conversation_id_for_ui(cls, conversation_id_for_ui: str):
         res = []
         async for r in cls.objects.filter(
-            conversation_id=int(conversation_id_for_ui.split("conversation-")[-1])
+            conversation_id=ConversationRow.db_id_from_ui_id(conversation_id_for_ui)
         ).order_by("-date_updated"):
             res.append(r)
         return res
@@ -160,8 +175,13 @@ class ResourceRow(models.Model):
     @classmethod
     async def acreate(cls, conversation_id_for_ui: str, url: str):
         res = await cls.objects.acreate(
-            conversation_id=int(conversation_id_for_ui.split("conversation-")[-1]),
+            conversation_id=ConversationRow.db_id_from_ui_id(conversation_id_for_ui),
             url=url,
+        )
+        await EventLogRows.acreate(
+            ConversationRow.db_id_from_ui_id(conversation_id_for_ui),
+            EventTypes.RESOURCE_ADDED,
+            res.id,
         )
         return res
 
@@ -491,7 +511,7 @@ class ConversationConfigRow(models.Model):
     def get_by_conversation_id_for_ui(cls, conversation_id_for_ui: str) -> Self | None:
         try:
             res = cls.objects.get(
-                conversation_id=int(conversation_id_for_ui.split("conversation-")[-1])
+                conversation_id=cls.db_id_from_ui_id(conversation_id_for_ui)
             )
             return res
         except cls.DoesNotExist:
@@ -503,7 +523,7 @@ class ConversationConfigRow(models.Model):
     ) -> Self | None:
         try:
             res = await cls.objects.aget(
-                conversation_id=int(conversation_id_for_ui.split("conversation-")[-1])
+                conversation_id=cls.db_id_from_ui_id(conversation_id_for_ui)
             )
             return res
         except cls.DoesNotExist:
@@ -549,6 +569,10 @@ class ConversationConfigRow(models.Model):
         conf.validate()
         return conf
 
+    @classmethod
+    def db_id_from_ui_id(cls, ui_id) -> int:
+        return int(ui_id.split("conversation-")[-1])
+
 
 def create_default_rows():
     DownloaderRow.create_default_rows()
@@ -556,3 +580,66 @@ def create_default_rows():
     EmbedderRow.create_default_rows()
     ChunkerRow.create_default_rows()
     ProcessorRow.create_default_rows()
+
+
+@dataclass
+class EventLog:
+    conversation_db_id: int
+    event_type: str
+    date_created: datetime
+    entity_id: str
+
+    def human_readable(self) -> str:
+        return f"{self.event_type}: {self.entity_id}"
+
+
+class EventLogRows(models.Model):
+    class EventType(models.TextChoices):
+        CONVERSATION_CREATED = (
+            EventTypes.CONVERSATION_CREATED,
+            EventTypes.CONVERSATION_CREATED,
+        )
+        RESOURCE_ADDED = EventTypes.RESOURCE_ADDED, EventTypes.RESOURCE_ADDED
+
+    type = models.CharField(max_length=1024, choices=EventType.choices)
+    conversation = models.ForeignKey(ConversationRow, on_delete=models.CASCADE)
+    entity_id = models.CharField(max_length=1024)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def create(cls, conversation_id: int, type, entity_id):
+        res = cls.objects.create(
+            type=type, conversation_id=conversation_id, entity_id=entity_id
+        )
+        return res
+
+    @classmethod
+    async def acreate(cls, conversation_id: int, type, entity_id):
+        res = await cls.objects.acreate(
+            type=type, conversation_id=conversation_id, entity_id=entity_id
+        )
+        return res
+
+    @classmethod
+    async def aget_logs_for_conversation(cls, conversation_id_for_ui) -> list[EventLog]:
+        conv_row = await ConversationRow.aget_by_id(
+            ConversationRow.db_id_from_ui_id(conversation_id_for_ui)
+        )
+        if not conv_row:
+            raise ValueError(f"Unknown conversation: {conversation_id_for_ui}")
+
+        logs = []
+        async for l in cls.objects.filter(conversation=conv_row).order_by(
+            "date_updated"
+        ):
+            logs.append(
+                EventLog(
+                    conversation_db_id=conv_row.id,
+                    event_type=l.type,
+                    date_created=l.date_created,
+                    entity_id=l.entity_id,
+                )
+            )
+
+        return logs
