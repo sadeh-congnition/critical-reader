@@ -8,7 +8,8 @@ from common.jobs.extract_text.job_dispatcher import (
     dispatcher as extract_text_dispatcher,
 )
 from common.jobs.rags.simple import rag_dispatcher
-from common.models import Config
+from common.models import ConversationRow
+from configuration.models import Config
 
 
 class Event:
@@ -37,7 +38,7 @@ class Planner:
     def rag_step_jobs(self):
         if self.conversation_config.processor.type == ProcessorType.SIMPLE_RAG:
             if self.conversation_config.processor.chunker.type == ChunkerType.NO_CHUNK:
-                yield [rag_dispatcher(self.conversation_config)]
+                yield rag_dispatcher(self.conversation_config)
             else:
                 raise Exception(
                     f"Unknown chunker: {self.conversation_config.processor.chunker}"
@@ -47,8 +48,10 @@ class Planner:
 
 
 async def create_resource_processing_pipeline(
-    event, conversation_config: Config, resource_id
+    event, conversation_config: Config, conversation_id_for_ui, resource_id
 ) -> Job:
+    conversation_id = ConversationRow.db_id_from_ui_id(conversation_id_for_ui)
+
     if event != Event.RESOURCE_CREATED:
         raise Exception("Unknown event")
 
@@ -59,12 +62,12 @@ async def create_resource_processing_pipeline(
 
     text_extract_step = Step()
     text_extract_job = planner.text_extractor_job()
-    await text_extract_step.aadd_job(text_extract_job, resource_id)
+    await text_extract_step.aadd_job(text_extract_job, conversation_id, resource_id)
 
     current_step = text_extract_step
     for jobs in planner.rag_step_jobs():
         next_step = await current_step.acreate_next_step()
         for j in jobs:
-            await next_step.aadd_job(j, resource_id)
+            await next_step.aadd_job(j, conversation_id, resource_id)
 
         current_step = next_step
