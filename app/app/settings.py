@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "common",
     "django_extensions",
     "django_async_job_pipelines",
+    "configuration",
 ]
 
 MIDDLEWARE = [

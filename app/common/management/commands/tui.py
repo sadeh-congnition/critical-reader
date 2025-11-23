@@ -1,15 +1,15 @@
 import traceback
-from loguru import logger
-from django.utils import timezone
 
 import djclick as click
-from textual.widgets import RichLog
-from textual.reactive import reactive
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
+from django.utils import timezone
 from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Grid
 from textual.css.query import NoMatches
 from textual.message import Message
+from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
@@ -17,21 +17,19 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    RichLog,
     Rule,
     Static,
 )
 
-from django.core.validators import URLValidator
-from django.core.exceptions import ValidationError
 from common.jobs.job_dispatcher import Event, create_resource_processing_pipeline
+from configuration.models import ConversationConfigRow, create_default_rows
 from common.models import (
     Conversation,
-    ConversationConfigRow,
     ConversationRow,
-    ResourceRow,
-    create_default_rows,
-    EventLogRows,
     EventLog,
+    EventLogRows,
+    ResourceRow,
 )
 
 create_default_rows()
@@ -86,7 +84,10 @@ class CreateResourceView(ModalScreen):
         conversation_config = await conversation_config_row.ato_obj()
         try:
             await create_resource_processing_pipeline(
-                Event.RESOURCE_CREATED, conversation_config, resource.id
+                Event.RESOURCE_CREATED,
+                conversation_config,
+                ACTIVE_CONVERSATION_ID,
+                resource.id,
             )
         except Exception:
             await resource.aadd_error(traceback.format_exc())
@@ -213,7 +214,7 @@ class ConversationDetails(DataTable):
     def make_rows(self, c: Conversation):
         rows = []
         if len(c.resources) == 0:
-            rows = [[c.id_for_ui, "Add resources!", c.status, c.config]]
+            rows = [[c.id_for_ui, "[bod][red]Add resources![/]", c.status, c.config]]
         else:
             for i, r in enumerate(c.resources):
                 if i == 0:
