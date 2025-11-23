@@ -1,12 +1,18 @@
 from django.contrib import admin
 from .models import (
-    ConversationConfigRow,
+    LLMModelRow,
+    ProjectConfigRow,
     DownloaderRow,
     TextExtractorRow,
     EmbedderRow,
     ProcessorRow,
     ChunkerRow,
 )
+
+
+@admin.register(LLMModelRow)
+class LLMModelTableAdmin(admin.ModelAdmin):
+    list_display = ("model_name",)
 
 
 @admin.register(ProcessorRow)
@@ -32,9 +38,9 @@ class JinaAIExtractorTableAdmin(admin.ModelAdmin):
     )
 
 
-@admin.register(ConversationConfigRow)
-class ConversationConfigTableAdmin(admin.ModelAdmin):
-    list_display = ("conversation", "downloader", "text_extractor")
+@admin.register(ProjectConfigRow)
+class ProjectConfigTableAdmin(admin.ModelAdmin):
+    list_display = ("project", "downloader", "text_extractor")
 
 
 @admin.register(EmbedderRow)
