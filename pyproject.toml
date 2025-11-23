@@ -10,6 +10,7 @@ dependencies = [
     "django-async-job-pipelines",
     "django-click>=2.4.1",
     "django-extensions>=4.1",
+    "django-types>=0.22.0",
     "loguru>=0.7.3",
     "pandas>=2.3.3",
     "ptpython>=3.0.31",

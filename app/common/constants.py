@@ -17,11 +17,6 @@ class DownloaderType:
     JINA_AI_READER_USING_JINA_API = "Jina AI reader using Jina API"
 
 
-class ConversationStatus:
-    NEW = "New"
-    PROCESSING_RESOURCES = "Processing resources"
-
-
 class ResourceStatus:
     NEW = "New"
     DOWNLOADED = "Downloaded"
@@ -40,8 +35,8 @@ class ProcessorType:
 
 
 class EventTypes:
+    PROJECT_CREATED = "Project created"
     RESOURCE_ADDED = "Resource added"
-    CONVERSATION_CREATED = "Conversation created"
     RESOURCE_PROCESSING_STARTED = "Resource processing started"
     RESOURCE_PROCESSING_ENCOUNTERED_ERROR = "Resource processing encountered error"
     RESOURCE_DOWNLOADED_AND_TEXT_EXTRACTED = "Resource downloaded and text extracted"

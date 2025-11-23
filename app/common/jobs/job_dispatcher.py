@@ -8,7 +8,7 @@ from common.jobs.extract_text.job_dispatcher import (
     dispatcher as extract_text_dispatcher,
 )
 from common.jobs.rags.simple import rag_dispatcher
-from common.models import ConversationRow
+from common.models import ProjectRow
 from configuration.models import Config
 
 
@@ -18,56 +18,54 @@ class Event:
 
 @dataclass
 class Planner:
-    conversation_config: Config
+    project_config: Config
 
     def download_job(self) -> Job | None:
         if (
-            self.conversation_config.downloader.type
+            self.project_config.downloader.type
             == DownloaderType.JINA_AI_READER_USING_JINA_API
         ):
             return
         else:
-            raise Exception(
-                f"Unknown downloader: {self.conversation_config.downloader}"
-            )
+            raise Exception(f"Unknown downloader: {self.project_config.downloader}")
 
     def text_extractor_job(self) -> Job | None:
-        if self.conversation_config.text_extractor.provider == Provider.JINA:
-            return extract_text_dispatcher(self.conversation_config)
+        if self.project_config.text_extractor.provider == Provider.JINA:
+            return extract_text_dispatcher(self.project_config)
 
     def rag_step_jobs(self):
-        if self.conversation_config.processor.type == ProcessorType.SIMPLE_RAG:
-            if self.conversation_config.processor.chunker.type == ChunkerType.NO_CHUNK:
-                yield rag_dispatcher(self.conversation_config)
+        if self.project_config.processor.type == ProcessorType.SIMPLE_RAG:
+            if self.project_config.processor.chunker.type == ChunkerType.NO_CHUNK:
+                yield rag_dispatcher(self.project_config)
             else:
                 raise Exception(
-                    f"Unknown chunker: {self.conversation_config.processor.chunker}"
+                    f"Unknown chunker: {self.project_config.processor.chunker}"
                 )
         else:
-            raise Exception(f"Unknown processor: {self.conversation_config.processor}")
+            raise Exception(f"Unknown processor: {self.project_config.processor}")
 
 
 async def create_resource_processing_pipeline(
-    event, conversation_config: Config, conversation_id_for_ui, resource_id
+    event, project_config: Config, project_id_for_ui, resource_id
 ) -> Job:
-    conversation_id = ConversationRow.db_id_from_ui_id(conversation_id_for_ui)
+    project_id = ProjectRow.db_id_from_ui_id(project_id_for_ui)
 
     if event != Event.RESOURCE_CREATED:
         raise Exception("Unknown event")
 
-    planner = Planner(conversation_config)
+    planner = Planner(project_config)
 
     download_job = planner.download_job()
     assert not download_job
 
     text_extract_step = Step()
     text_extract_job = planner.text_extractor_job()
-    await text_extract_step.aadd_job(text_extract_job, conversation_id, resource_id)
+    await text_extract_step.aadd_job(text_extract_job, project_id, resource_id)
 
     current_step = text_extract_step
     for jobs in planner.rag_step_jobs():
         next_step = await current_step.acreate_next_step()
         for j in jobs:
-            await next_step.aadd_job(j, conversation_id, resource_id)
+            await next_step.aadd_job(j, project_id, resource_id)
 
         current_step = next_step

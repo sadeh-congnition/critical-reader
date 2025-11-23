@@ -10,6 +10,6 @@ Create Django admin super user.
 
 Create configuration.
 
-Run TUI. Create conversation. Assign config to it. Add resources to it.
+Run TUI. Create project. Assign config to it. Add resources to it.
 
 Start job runner.

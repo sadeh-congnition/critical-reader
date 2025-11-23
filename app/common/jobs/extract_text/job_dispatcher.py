@@ -6,9 +6,9 @@ from common.jobs.extract_text.using_apis.jina_ai_api import (
 )
 
 
-def dispatcher(conversation_config: Config) -> Job:
+def dispatcher(project_config: Config) -> Job:
     supported_extractors = [Provider.JINA]
-    text_extractor = conversation_config.text_extractor
+    text_extractor = project_config.text_extractor
 
     if text_extractor.provider == Provider.JINA:
         return scrape_web_page_using_requests

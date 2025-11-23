@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Self
 
 from django.db import models
-from common.models import ConversationRow
+from common.models import ProjectRow
 from common.constants import (
     DownloaderType,
     JINA_AI_MODELS,
@@ -228,6 +228,7 @@ class ProcessorRow(models.Model):
 
     type = models.CharField(max_length=1024, choices=Type.choices)
     chunker = models.ForeignKey(ChunkerRow, on_delete=models.CASCADE)
+    chunker_id: int
 
     class Meta:
         unique_together = [("type", "chunker")]
@@ -284,17 +285,37 @@ class LLMModelRow(models.Model):
     model_name = models.CharField(max_length=1024)
 
     @classmethod
+    async def aget(cls, id) -> Self:
+        res = await cls.objects.aget(id=id)
+        return res
+
+    @classmethod
     def create_default_rows(cls):
         cls.objects.get_or_create(model_name="ollama_chat/qwen3:4b")
 
+    def __str__(self):
+        return self.model_name
 
-class ConversationConfigRow(models.Model):
-    conversation = models.OneToOneField(ConversationRow, on_delete=models.CASCADE)
+    def to_dict(self) -> dict:
+        return {"model_name": self.model_name}
+
+    def to_obj(self) -> LLMModel:
+        return LLMModel(model_name=self.model_name)
+
+
+class ProjectConfigRow(models.Model):
+    project = models.OneToOneField(ProjectRow, on_delete=models.CASCADE)
     downloader = models.ForeignKey(DownloaderRow, on_delete=models.CASCADE)
     text_extractor = models.ForeignKey(TextExtractorRow, on_delete=models.CASCADE)
     embedder = models.ForeignKey(EmbedderRow, on_delete=models.CASCADE)
     processor = models.ForeignKey(ProcessorRow, on_delete=models.CASCADE)
     llm_model = models.ForeignKey(LLMModelRow, on_delete=models.CASCADE)
+    downloader_id: int
+    text_extractor_id: int
+    embedder_id: int
+    llm_model_id: int
+    processor_id: int
+    id: int
 
     def __str__(self):
         return f"{self.downloader}, {self.text_extractor}, {self.embedder}"
@@ -323,30 +344,26 @@ class ConversationConfigRow(models.Model):
         }
 
     @classmethod
-    async def aget_by_conversation(cls, conversation_id: str) -> Self | None:
+    async def aget_by_project(cls, project_id: int) -> Self | None:
         try:
-            res = await cls.objects.aget(conversation_id=conversation_id)
+            res = await cls.objects.aget(project_id=project_id)
             return res
         except cls.DoesNotExist:
             return
 
     @classmethod
-    def get_by_conversation_id_for_ui(cls, conversation_id_for_ui: str) -> Self | None:
+    def get_by_project_id_for_ui(cls, project_id_for_ui: str) -> Self | None:
         try:
-            res = cls.objects.get(
-                conversation_id=cls.db_id_from_ui_id(conversation_id_for_ui)
-            )
+            res = cls.objects.get(project_id=cls.db_id_from_ui_id(project_id_for_ui))
             return res
         except cls.DoesNotExist:
             return
 
     @classmethod
-    async def aget_by_conversation_id_for_ui(
-        cls, conversation_id_for_ui: str
-    ) -> Self | None:
+    async def aget_by_project_id_for_ui(cls, project_id_for_ui: str) -> Self | None:
         try:
             res = await cls.objects.aget(
-                conversation_id=cls.db_id_from_ui_id(conversation_id_for_ui)
+                project_id=cls.db_id_from_ui_id(project_id_for_ui)
             )
             return res
         except cls.DoesNotExist:
@@ -357,13 +374,13 @@ class ConversationConfigRow(models.Model):
         text_extractor = await TextExtractorRow.aget(self.text_extractor_id)
         embedder = await EmbedderRow.aget(self.embedder_id)
         processor = await ProcessorRow.aget(self.processor_id)
-        llm_model = await LLMModelRow.aget(self.processor_id)
+        llm_model = await LLMModelRow.aget(self.llm_model_id)
 
         processor_obj = await processor.ato_obj()
         downloader_obj = downloader.to_obj()
 
         conf = Config(
-            conversation_id=self.id,
+            project_id=self.id,
             downloader=downloader_obj,
             text_extractor=text_extractor.to_obj(downloader_obj),
             embedder=embedder.to_obj(),
@@ -385,7 +402,7 @@ class ConversationConfigRow(models.Model):
         downloader_obj = downloader.to_obj()
 
         conf = Config(
-            conversation_id=self.id,
+            project_id == self.id,
             downloader=downloader_obj,
             text_extractor=text_extractor.to_obj(downloader_obj),
             embedder=embedder.to_obj(),
@@ -398,12 +415,12 @@ class ConversationConfigRow(models.Model):
 
     @classmethod
     def db_id_from_ui_id(cls, ui_id) -> int:
-        return int(ui_id.split("conversation-")[-1])
+        return int(ui_id.split("project-")[-1])
 
 
 @dataclass
 class Config:
-    conversation_id: int | str
+    project_id: int | str
     downloader: Downloader
     text_extractor: TextExtractor
     embedder: Embedder
