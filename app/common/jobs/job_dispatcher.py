@@ -46,10 +46,8 @@ class Planner:
 
 
 async def create_resource_processing_pipeline(
-    event, project_config: Config, project_id_for_ui, resource_id
+    event, project_config: Config, project_id, resource_id
 ) -> Job:
-    project_id = ProjectRow.db_id_from_ui_id(project_id_for_ui)
-
     if event != Event.RESOURCE_CREATED:
         raise Exception("Unknown event")
 

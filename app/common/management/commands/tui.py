@@ -1,5 +1,4 @@
 import djclick as click
-from textual import widgets
 from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.widgets import (
@@ -11,10 +10,9 @@ from textual.widgets import (
 from configuration.models import create_default_rows
 from common.models import (
     ProjectRow,
-    Project,
 )
-from tui.widgets.project import ProjectView, ProjectDetails
-from tui.models import AppState
+from common.project_manager import Project, ProjectManager
+from tui.widgets.project import ProjectView, ProjectSummary
 
 create_default_rows()
 
@@ -37,13 +35,12 @@ class CriticalReaderTUIApp(App):
         yield Footer()
 
     async def on_mount(self):
-        self.projects = await ProjectRow.aget_all()
-        for c in self.projects:
-            await self.mount(ProjectDetails(id=c.id_for_ui))
+        async for c in ProjectManager.aget_all():
+            await self.mount(ProjectSummary(id=c.id_for_ui))
             await self.mount(Rule())
 
-        for c in self.projects:
-            data_table = self.query_one(f"#{c.id_for_ui}", ProjectDetails)
+        async for c in ProjectManager.aget_all():
+            data_table = self.query_one(f"#{c.id_for_ui}", ProjectSummary)
             data_table.make_rows(c)
 
     def action_toggle_dark(self) -> None:
@@ -57,15 +54,15 @@ class CriticalReaderTUIApp(App):
 
     async def action_create_project(self):
         project_row = await ProjectRow.acreate()
-        project: Project = await project_row.ato_obj()
-        self.mount(ProjectDetails(id=project.id_for_ui))
-        data_table = self.query_one(f"#{project.id_for_ui}", ProjectDetails)
+        project: Project = await Project.acreate_from_db_row(project_row)
+        self.mount(ProjectSummary(id=project.id_for_ui))
+        data_table = self.query_one(f"#{project.id_for_ui}", ProjectSummary)
         data_table.make_rows(project)
         self.mount(Rule())
 
-    def on_project_details_selected(self, message: ProjectDetails.Selected):
-        project_id = message.project_id
-        AppState.active_project_id = project_id
+    async def on_project_summary_selected(self, message: ProjectSummary.Selected):
+        project_ui_id = message.project_id
+        await ProjectManager.aset_app_state(Project.db_id_from_ui_id(project_ui_id))
         self.push_screen("project-view")
 
 

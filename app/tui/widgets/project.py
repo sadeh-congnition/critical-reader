@@ -9,12 +9,15 @@ from textual.widgets import DataTable, Footer, Header, Label, RichLog
 
 from tui.widgets.resource import CreateResourceView, ResroucesList
 from configuration.models import ProjectConfigRow
-from common.models import EventLog, EventLogRows, Project
+from common.models import EventLog, EventLogRows
+from common.project_manager import Project
 from tui.models import AppState
 from tui.widgets.config import ConfigMissing
+from tui.widgets.chat import ChatSummaryList, ChatDetailsView
+from common.chat_manager import ChatManager
 
 
-class ProjectDetails(DataTable):
+class ProjectSummary(DataTable):
     class Selected(Message):
         def __init__(self, id: str):
             self.project_id = id
@@ -45,6 +48,7 @@ class ProjectView(ModalScreen):
     BINDINGS = [
         ("escape", "app.pop_screen", "Back"),
         ("r", "add_resource", "Add resource"),
+        ("c", "add_chat", "Start new chat"),
         ("q", "quit_app", "Quit app"),
     ]
 
@@ -58,12 +62,13 @@ class ProjectView(ModalScreen):
         yield Footer()
         yield Label("[bold][yellow]Resources[/]")
         yield ResroucesList(id="resources-list")
+        yield ChatSummaryList(id="chat-summary-list")
         yield RichLog(id="event-log", markup=True)
 
     async def on_mount(self):
         self.set_interval(3, self.update_time)
         data_table = self.query_resources_list()
-        await data_table.make_rows(AppState.active_project_id)
+        await data_table.make_rows(AppState.active_project.id_in_db)
 
     def query_resources_list(self):
         return self.query_one("#resources-list", ResroucesList)
@@ -76,17 +81,26 @@ class ProjectView(ModalScreen):
         await self.acreate_event_log()
 
     async def action_add_resource(self):
-        project_config_row = await ProjectConfigRow.aget_by_project_id_for_ui(
-            AppState.active_project_id
+        project_config_row = await ProjectConfigRow.aget_by_project(
+            AppState.active_project.id_in_db
         )
         if not project_config_row:
             self.app.push_screen(ConfigMissing())
         else:
             self.app.push_screen(CreateResourceView())
 
+    async def action_add_chat(self):
+        reading_pal_chat_row = await ChatManager.aadd_chat(
+            AppState.active_project.id_in_db
+        )
+        if not reading_pal_chat_row:
+            self.app.push_screen(ConfigMissing())
+        else:
+            self.app.push_screen(ChatDetailsView())
+
     async def acreate_event_log(self):
         events: list[EventLog] = await EventLogRows.aget_logs_for_project(
-            AppState.active_project_id
+            AppState.active_project.id_in_db
         )
         event_log = self.query_one(RichLog)
         event_log.clear()
@@ -115,4 +129,4 @@ class ProjectView(ModalScreen):
 
     async def arecreate_resources_table(self):
         data_table = self.clear_resources_list()
-        await data_table.make_rows(AppState.active_project_id)
+        await data_table.make_rows(AppState.active_project.id_in_db)

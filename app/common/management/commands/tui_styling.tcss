@@ -27,3 +27,22 @@ CreateResourceView{
 #url-input {
   width: 1fr;
 }
+
+ChatSummaryList {
+    width: 30;
+    margin: 2 2;
+    height: 30;
+}
+
+Label {
+    padding: 1 2;
+}
+
+Chat {
+  height: 30;
+}
+
+ChatDetailsView {
+  width: 100%;
+  height: 100%;
+}
