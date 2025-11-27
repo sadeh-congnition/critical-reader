@@ -199,7 +199,8 @@ class ReadingPalChat(models.Model):
     project = models.ForeignKey(ProjectRow, on_delete=models.CASCADE)
     date_added = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255)  # TODO remove this column
+    id_for_ui = models.CharField(max_length=255)
     id: int
 
     @classmethod
@@ -212,3 +213,11 @@ class ReadingPalChat(models.Model):
     @classmethod
     async def acreate(cls, project_id):
         return await cls.objects.acreate(project_id=project_id, name="New chat")
+
+    async def add_id_for_ui(self, id_for_ui: str):
+        self.id_for_ui = id_for_ui
+        await self.asave()
+
+    @classmethod
+    async def aget_by_ui_id(cls, id_for_ui: str):
+        return await cls.objects.aget(id_for_ui=id_for_ui)

@@ -1,8 +1,8 @@
 from common.chat_manager import ChatManager
 from textual import events
-from textual.message import Message
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
+from textual.message import Message
 from textual.screen import Screen
 from textual.widget import Widget
 from textual.widgets import (
@@ -24,7 +24,7 @@ class ChatListItem(ListItem):
             super().__init__()
 
     def key_enter(self, event: events.Key) -> None:
-        self.post_message(self.Selected(self.id))
+        raise KeyboardInterrupt(event)
 
 
 class ChatList(Widget):
@@ -36,7 +36,10 @@ class ChatList(Widget):
         async for c in ChatManager.aget_all_for_project(
             AppState.active_project.id_in_db
         ):
-            tui_list_items.append(ChatListItem(Label(c.preview), id=str(c.id_for_ui)))
+            tui_list_items.append(ChatListItem(Label(c.preview), id=c.id_for_ui))
+
+    async def on_list_view_selected(self, item):
+        self.post_message(ChatListItem.Selected(item.item.id))
 
 
 class ChatDetailsView(Screen):
@@ -51,4 +54,4 @@ class ChatDetailsView(Screen):
         yield Footer()
 
     def on_mount(self):
-        self.title = "Chat"
+        self.title = "Chat Details"

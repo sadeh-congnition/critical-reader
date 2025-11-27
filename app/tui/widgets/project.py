@@ -1,3 +1,7 @@
+from common.chat_manager import ChatManager
+from common.models import EventLog, EventLogRows, ReadingPalChat
+from common.project_manager import Project
+from configuration.models import ProjectConfigRow
 from django.utils import timezone
 from textual import events
 from textual.app import ComposeResult
@@ -6,15 +10,10 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Label, RichLog
-
-from tui.widgets.resource import CreateResourceView, ResroucesList
-from configuration.models import ProjectConfigRow
-from common.models import EventLog, EventLogRows
-from common.project_manager import Project
 from tui.models import AppState
+from tui.widgets.chat import ChatDetailsView, ChatList, ChatListItem
 from tui.widgets.config import ConfigMissing
-from tui.widgets.chat import ChatList, ChatDetailsView
-from common.chat_manager import ChatManager
+from tui.widgets.resource import CreateResourceView, ResroucesList
 
 
 class ProjectSummary(DataTable):
@@ -62,6 +61,7 @@ class ProjectView(ModalScreen):
         yield Footer()
         yield Label("[bold][yellow]Resources[/]")
         yield ResroucesList(id="resources-list")
+        yield Label("[bold][yellow]Chats[/]")
         yield ChatList(id="chat-list")
         yield Label("[bold][yellow]Project Events Log[/]")
         yield RichLog(id="event-log", markup=True)
@@ -130,3 +130,9 @@ class ProjectView(ModalScreen):
     async def arecreate_resources_table(self):
         data_table = self.clear_resources_list()
         await data_table.make_rows(AppState.active_project.id_in_db)
+
+    async def on_chat_list_item_selected(self, message: ChatListItem.Selected):
+        chat_id_for_ui = message.chat_id_for_ui
+        chat_row = await ReadingPalChat.aget_by_ui_id(chat_id_for_ui)
+        AppState.set_active_chat(chat_row)
+        self.app.push_screen(ChatDetailsView())

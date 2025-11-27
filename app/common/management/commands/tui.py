@@ -35,6 +35,7 @@ class CriticalReaderTUIApp(App):
         yield Footer()
 
     async def on_mount(self):
+        self.title = "Reading Pal"
         async for c in ProjectManager.aget_all():
             await self.mount(ProjectSummary(id=c.id_for_ui))
             await self.mount(Rule())
