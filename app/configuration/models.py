@@ -285,6 +285,11 @@ class LLMModelRow(models.Model):
     model_name = models.CharField(max_length=1024)
 
     @classmethod
+    def get(cls, id) -> Self:
+        res = cls.objects.get(id=id)
+        return res
+
+    @classmethod
     async def aget(cls, id) -> Self:
         res = await cls.objects.aget(id=id)
         return res
@@ -316,6 +321,7 @@ class ProjectConfigRow(models.Model):
     llm_model_id: int
     processor_id: int
     id: int
+    project_id: int
 
     def __str__(self):
         return f"{self.downloader}, {self.text_extractor}, {self.embedder}"
@@ -352,18 +358,18 @@ class ProjectConfigRow(models.Model):
             return
 
     @classmethod
-    def get_by_project_id_for_ui(cls, project_id_for_ui: str) -> Self | None:
+    def get_by_project_id(cls, project_id: int) -> Self | None:
         try:
-            res = cls.objects.get(project_id=cls.db_id_from_ui_id(project_id_for_ui))
+            res = cls.objects.get(project_id=project_id)
             return res
         except cls.DoesNotExist:
             return
 
     @classmethod
-    async def aget_by_project_id_for_ui(cls, project_id_for_ui: str) -> Self | None:
+    async def aget_by_project_id(cls, project_id: int) -> Self | None:
         try:
             res = await cls.objects.aget(
-                project_id=cls.db_id_from_ui_id(project_id_for_ui)
+                project_id=project_id,
             )
             return res
         except cls.DoesNotExist:
@@ -375,12 +381,14 @@ class ProjectConfigRow(models.Model):
         embedder = await EmbedderRow.aget(self.embedder_id)
         processor = await ProcessorRow.aget(self.processor_id)
         llm_model = await LLMModelRow.aget(self.llm_model_id)
+        project_row = await ProjectRow.aget_by_id(self.project_id)
+        assert project_row
 
         processor_obj = await processor.ato_obj()
         downloader_obj = downloader.to_obj()
 
         conf = Config(
-            project_id=self.id,
+            project_id=project_row.id,
             downloader=downloader_obj,
             text_extractor=text_extractor.to_obj(downloader_obj),
             embedder=embedder.to_obj(),
@@ -397,12 +405,14 @@ class ProjectConfigRow(models.Model):
         embedder = EmbedderRow.get(self.embedder_id)
         processor = ProcessorRow.get(self.processor_id)
         llm_model = LLMModelRow.get(self.processor_id)
+        project_row = ProjectRow.get_by_id(self.project_id)
+        assert project_row
 
         processor_obj = processor.to_obj()
         downloader_obj = downloader.to_obj()
 
         conf = Config(
-            project_id == self.id,
+            project_id=project_row.id,
             downloader=downloader_obj,
             text_extractor=text_extractor.to_obj(downloader_obj),
             embedder=embedder.to_obj(),
@@ -412,10 +422,6 @@ class ProjectConfigRow(models.Model):
 
         conf.validate()
         return conf
-
-    @classmethod
-    def db_id_from_ui_id(cls, ui_id) -> int:
-        return int(ui_id.split("project-")[-1])
 
 
 @dataclass

@@ -11,6 +11,7 @@ from tui.models import AppState
 from tui.widgets.config import ConfigMissing
 from common.models import ResourceRow
 from common.jobs.job_dispatcher import Event, create_resource_processing_pipeline
+from common.project_manager import ProjectManager
 
 
 class CreateResourceView(ModalScreen):
@@ -33,21 +34,23 @@ class CreateResourceView(ModalScreen):
             self.mount(Static("[red]Invalid URL[/]"))
             return
 
-        project_config_row = await ProjectConfigRow.aget_by_project_id_for_ui(
-            AppState.active_project_id
+        project_config_row = await ProjectConfigRow.aget_by_project(
+            AppState.active_project.id_in_db
         )
         if not project_config_row:
             self.app.pop_screen()
             self.app.push_screen(ConfigMissing())
             return
 
-        resource = await ResourceRow.acreate(AppState.active_project_id, event.value)
+        resource = await ProjectManager.aadd_resource(event.value)
+        assert resource
+
         project_config = await project_config_row.ato_obj()
         try:
             await create_resource_processing_pipeline(
                 Event.RESOURCE_CREATED,
                 project_config,
-                AppState.active_project_id,
+                AppState.active_project.id_in_db,
                 resource.id,
             )
         except Exception:
@@ -60,9 +63,8 @@ class ResroucesList(DataTable):
     def on_mount(self):
         self.add_columns("ID", "Name", "Status", "Error")
 
-    async def make_rows(self, project_id_for_ui):
-        resources = await ResourceRow.aget_all_by_project_id_for_ui(project_id_for_ui)
-        for r in resources:
+    async def make_rows(self, project_id: int):
+        async for r in ResourceRow.aget_all_by_project_id(project_id):
             if len(r.url) > 50:
                 url = r.url[:50] + "..."
             else:

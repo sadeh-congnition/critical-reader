@@ -66,22 +66,20 @@ class ResourceRow(models.Model):
         await self.asave()
 
     @classmethod
-    async def aget_all_by_project_id_for_ui(cls, project_id_for_ui: str):
-        res = []
+    async def aget_all_by_project_id(cls, project_id: int):
         async for r in cls.objects.filter(
-            project_id=ProjectRow.db_id_from_ui_id(project_id_for_ui)
+            project_id=project_id,
         ).order_by("-date_updated"):
-            res.append(r)
-        return res
+            yield r
 
     @classmethod
-    async def acreate(cls, project_id_for_ui: str, url: str):
+    async def acreate(cls, project_id: int, url: str):
         res = await cls.objects.acreate(
-            project_id=ProjectRow.db_id_from_ui_id(project_id_for_ui),
+            project_id=project_id,
             url=url,
         )
         await EventLogRows.acreate(
-            ProjectRow.db_id_from_ui_id(project_id_for_ui),
+            project_id,
             EventTypes.RESOURCE_ADDED,
             res.id,
         )
@@ -99,17 +97,6 @@ class ResourceRow(models.Model):
         self.save()
 
 
-@dataclass
-class Project:
-    id_in_db: int | str
-    id_for_ui: str
-    resources: list[Resource]
-    config: dict
-
-    def __str__(self):
-        return f"{self.id_for_ui}"
-
-
 class ProjectRow(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
@@ -119,23 +106,23 @@ class ProjectRow(models.Model):
         resources: RelatedManager[ResourceRow]
 
     @classmethod
-    async def aget_by_id(cls, row_id) -> Self | None:
+    async def get_by_id(cls, row_id: int) -> Self | None:
+        try:
+            res = cls.objects.get(id=row_id)
+            return res
+        except cls.DoesNotExist:
+            return
+
+    @classmethod
+    async def aget_by_id(cls, row_id: int) -> Self | None:
         try:
             res = await cls.objects.aget(id=row_id)
             return res
         except cls.DoesNotExist:
             return
 
-    @property
-    def id_for_ui(self):
-        return f"project-{self.id}"
-
-    @classmethod
-    def db_id_from_ui_id(cls, ui_id) -> int:
-        return int(ui_id.split("project-")[-1])
-
     def __str__(self):
-        return f"project-{self.id}: {str(self.status)}"
+        return f"project-{self.id}"
 
     @classmethod
     async def acreate(cls):
@@ -145,42 +132,12 @@ class ProjectRow(models.Model):
 
     @classmethod
     async def aall(cls):
-        res = []
         async for r in cls.objects.all():
-            res.append(r)
-        return res
+            yield r
 
     @classmethod
     def all(cls):
         return cls.objects.all()
-
-    async def ato_obj(self) -> Project:
-        from configuration.models import ProjectConfigRow
-
-        resources = []
-        async for r in self.resources.order_by("-date_updated").all():
-            resources.append(Resource(url=r.url, status=r.status))
-
-        config_row = await ProjectConfigRow.aget_by_project(self.id)
-        if config_row:
-            config = await config_row.ato_dict()
-        else:
-            config = {}
-        return Project(
-            id_in_db=self.id,
-            id_for_ui=self.id_for_ui,
-            resources=resources,
-            config=config,
-        )
-
-    @classmethod
-    async def aget_all(cls) -> list[Project]:
-        res = []
-        project_rows = await cls.aall()
-        for c in project_rows:
-            project = await c.ato_obj()
-            res.append(project)
-        return res
 
 
 @dataclass
@@ -198,6 +155,7 @@ class EventLogRows(models.Model):
     class EventType(models.TextChoices):
         PROJECT_CREATED = EventTypes.PROJECT_CREATED, EventTypes.PROJECT_CREATED
         RESOURCE_ADDED = EventTypes.RESOURCE_ADDED, EventTypes.RESOURCE_ADDED
+        CHAT_CREATED = EventTypes.CHAT_CREATED, EventTypes.CHAT_CREATED
 
     type = models.CharField(max_length=1024, choices=EventType.choices)
     project = models.ForeignKey(ProjectRow, on_delete=models.CASCADE)
@@ -218,12 +176,10 @@ class EventLogRows(models.Model):
         return res
 
     @classmethod
-    async def aget_logs_for_project(cls, project_id_for_ui) -> list[EventLog]:
-        project_row = await ProjectRow.aget_by_id(
-            ProjectRow.db_id_from_ui_id(project_id_for_ui)
-        )
+    async def aget_logs_for_project(cls, project_id: int) -> list[EventLog]:
+        project_row = await ProjectRow.aget_by_id(project_id)
         if not project_row:
-            raise ValueError(f"Unknown project: {project_id_for_ui}")
+            raise ValueError(f"Unknown project: {project_id}")
 
         logs = []
         async for l in cls.objects.filter(project=project_row).order_by("date_updated"):
@@ -237,3 +193,31 @@ class EventLogRows(models.Model):
             )
 
         return logs
+
+
+class ReadingPalChat(models.Model):
+    project = models.ForeignKey(ProjectRow, on_delete=models.CASCADE)
+    date_added = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+    name = models.CharField(max_length=255)  # TODO remove this column
+    id_for_ui = models.CharField(max_length=255)
+    id: int
+
+    @classmethod
+    async def aget_all(cls, project_id):
+        async for r in cls.objects.filter(project_id=project_id).order_by(
+            "-date_updated"
+        ):
+            yield r
+
+    @classmethod
+    async def acreate(cls, project_id):
+        return await cls.objects.acreate(project_id=project_id, name="New chat")
+
+    async def add_id_for_ui(self, id_for_ui: str):
+        self.id_for_ui = id_for_ui
+        await self.asave()
+
+    @classmethod
+    async def aget_by_ui_id(cls, id_for_ui: str):
+        return await cls.objects.aget(id_for_ui=id_for_ui)
