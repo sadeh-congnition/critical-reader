@@ -5,6 +5,9 @@ from common.models import Resource, ResourceRow, ProjectRow
 from configuration.models import ProjectConfigRow
 
 
+# TODO AppState management should be done in the TUI code
+
+
 @dataclass
 class Project:
     id_in_db: int

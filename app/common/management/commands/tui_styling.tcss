@@ -28,8 +28,8 @@ CreateResourceView{
   width: 1fr;
 }
 
-ChatSummaryList {
-    width: 30;
+ChatList {
+    width: 100%;
     margin: 2 2;
     height: 30;
 }
@@ -45,4 +45,17 @@ Chat {
 ChatDetailsView {
   width: 100%;
   height: 100%;
+}
+
+#chat_user_input_box {
+  dock: bottom;
+  height: auto;
+  width: 100%;
+  margin: 0 0 2 0;
+  align_horizontal: center;
+}
+
+#chat_user_input_message {
+  width: 100%;
+  background: #343a40;
 }

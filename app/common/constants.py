@@ -41,3 +41,4 @@ class EventTypes:
     RESOURCE_PROCESSING_ENCOUNTERED_ERROR = "Resource processing encountered error"
     RESOURCE_DOWNLOADED_AND_TEXT_EXTRACTED = "Resource downloaded and text extracted"
     RESOURCE_PROCESSED = "Resource processed"
+    CHAT_CREATED = "Chat created"

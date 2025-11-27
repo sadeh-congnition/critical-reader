@@ -13,7 +13,7 @@ from common.models import EventLog, EventLogRows
 from common.project_manager import Project
 from tui.models import AppState
 from tui.widgets.config import ConfigMissing
-from tui.widgets.chat import ChatSummaryList, ChatDetailsView
+from tui.widgets.chat import ChatList, ChatDetailsView
 from common.chat_manager import ChatManager
 
 
@@ -62,7 +62,8 @@ class ProjectView(ModalScreen):
         yield Footer()
         yield Label("[bold][yellow]Resources[/]")
         yield ResroucesList(id="resources-list")
-        yield ChatSummaryList(id="chat-summary-list")
+        yield ChatList(id="chat-list")
+        yield Label("[bold][yellow]Project Events Log[/]")
         yield RichLog(id="event-log", markup=True)
 
     async def on_mount(self):
@@ -96,6 +97,7 @@ class ProjectView(ModalScreen):
         if not reading_pal_chat_row:
             self.app.push_screen(ConfigMissing())
         else:
+            AppState.set_active_chat(reading_pal_chat_row)
             self.app.push_screen(ChatDetailsView())
 
     async def acreate_event_log(self):
@@ -104,8 +106,6 @@ class ProjectView(ModalScreen):
         )
         event_log = self.query_one(RichLog)
         event_log.clear()
-
-        event_log.write("[bold][yellow]Project events log:[/]")
 
         for e in events:
             event_log.write(e.human_readable())

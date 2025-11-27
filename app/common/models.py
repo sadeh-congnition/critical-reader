@@ -155,6 +155,7 @@ class EventLogRows(models.Model):
     class EventType(models.TextChoices):
         PROJECT_CREATED = EventTypes.PROJECT_CREATED, EventTypes.PROJECT_CREATED
         RESOURCE_ADDED = EventTypes.RESOURCE_ADDED, EventTypes.RESOURCE_ADDED
+        CHAT_CREATED = EventTypes.CHAT_CREATED, EventTypes.CHAT_CREATED
 
     type = models.CharField(max_length=1024, choices=EventType.choices)
     project = models.ForeignKey(ProjectRow, on_delete=models.CASCADE)
@@ -203,7 +204,9 @@ class ReadingPalChat(models.Model):
 
     @classmethod
     async def aget_all(cls, project_id):
-        async for r in cls.objects.filter(project_id=project_id):
+        async for r in cls.objects.filter(project_id=project_id).order_by(
+            "-date_updated"
+        ):
             yield r
 
     @classmethod
