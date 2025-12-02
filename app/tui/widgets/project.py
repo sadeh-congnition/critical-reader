@@ -91,13 +91,12 @@ class ProjectView(ModalScreen):
             self.app.push_screen(CreateResourceView())
 
     async def action_add_chat(self):
-        reading_pal_chat_row = await ChatManager.aadd_chat(
-            AppState.active_project.id_in_db
-        )
-        if not reading_pal_chat_row:
+        chat_manager = await ChatManager.acreate_new(AppState.active_project.id_in_db)
+        if not chat_manager:
             self.app.push_screen(ConfigMissing())
         else:
-            AppState.set_active_chat(reading_pal_chat_row)
+            AppState.set_active_readingpal_chat(chat_manager.readingpal_chat)
+            AppState.set_active_djllm_chat(chat_manager.readingpal_chat)
             self.app.push_screen(ChatDetailsView())
 
     async def acreate_event_log(self):
@@ -134,5 +133,6 @@ class ProjectView(ModalScreen):
     async def on_chat_list_item_selected(self, message: ChatListItem.Selected):
         chat_id_for_ui = message.chat_id_for_ui
         chat_row = await ReadingPalChat.aget_by_ui_id(chat_id_for_ui)
-        AppState.set_active_chat(chat_row)
+        AppState.set_active_readingpal_chat(chat_row)
+        AppState.set_active_djllm_chat(chat_row.djllmchat)
         self.app.push_screen(ChatDetailsView())

@@ -10,6 +10,7 @@ dependencies = [
     "django-async-job-pipelines",
     "django-click>=2.4.1",
     "django-extensions>=4.1",
+    "django-llm-chat",
     "django-types>=0.22.0",
     "loguru>=0.7.3",
     "pandas>=2.3.3",
@@ -31,3 +32,4 @@ dev = [
 
 [tool.uv.sources]
 django-async-job-pipelines = { path = "../django-async-job-pipelines", editable = true }
+django-llm-chat = { path = "../django-llm-chat", editable = true }
