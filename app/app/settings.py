@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "django_extensions",
     "django_async_job_pipelines",
     "configuration",
+    "django_llm_chat",
 ]
 
 MIDDLEWARE = [

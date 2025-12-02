@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Self
 
 from django.db import models
+from django_llm_chat.models import Chat
 
 from common.constants import (
     ResourceStatus,
@@ -197,6 +198,7 @@ class EventLogRows(models.Model):
 
 class ReadingPalChat(models.Model):
     project = models.ForeignKey(ProjectRow, on_delete=models.CASCADE)
+    djllmchat = models.ForeignKey(Chat, on_delete=models.CASCADE)
     date_added = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     name = models.CharField(max_length=255)  # TODO remove this column
@@ -211,13 +213,17 @@ class ReadingPalChat(models.Model):
             yield r
 
     @classmethod
-    async def acreate(cls, project_id):
-        return await cls.objects.acreate(project_id=project_id, name="New chat")
+    async def acreate(cls, project_id, djllmchat: Chat):
+        return await cls.objects.acreate(project_id=project_id, djllmchat=djllmchat)
 
-    async def add_id_for_ui(self, id_for_ui: str):
+    async def aadd_id_for_ui(self, id_for_ui: str):
         self.id_for_ui = id_for_ui
         await self.asave()
 
     @classmethod
     async def aget_by_ui_id(cls, id_for_ui: str):
-        return await cls.objects.aget(id_for_ui=id_for_ui)
+        return await cls.objects.select_related("djllmchat").aget(id_for_ui=id_for_ui)
+
+    @classmethod
+    async def aget_by_id(cls, id: int):
+        return await cls.objects.aget(id=id)
